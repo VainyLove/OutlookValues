@@ -1,0 +1,234 @@
+############################################################################################################
+
+########################################################################
+#----------CHECKING / ADDING REQUIRED OUTLOOK REGISTRY VALUES----------#
+########################################################################
+
+# DEVELOPED BY: VINCENT LOVELAND (IMD)
+
+# Function of this program:
+
+# Find user's SID if profile name is valid
+
+# Load the HKU registry drive
+
+# User's SID will be inputed into the HKU drive path
+
+# Check for registry values required for Outlook to function correctly
+
+# If path returns false, DWORD value will be added
+
+# Required DWORD values
+# ===========================================
+
+# ZeroConfigExchange1 = 0
+
+# ZeroConfigExchange2 = 0
+
+# ExcludeHttpRedirect = 0
+
+# ExcludeHttpsAutoDiscoverDomain = 0
+
+# AlwaysUseLegacyAuthForAutoDiscover = 1
+
+# SupressNameChecks = 1
+
+# ExcludeSrvRecord = 1
+
+# ExcludeSrvLookup = 1
+
+# ExcludeScpLookup = 1
+
+# ExcludeHttpsRootDomain = 1
+
+# PreferLocalXML = 1
+
+# EnableSmartCard = 1
+
+############################################################################################################
+
+# Header for the program
+Write-Host ""
+Write-Host "########################################################################"
+Write-Host "#                                                                      #"
+Write-Host "#          CHECKING / ADDING REQUIRED OUTLOOK REGISTRY VALUES          #"
+Write-Host "#                                                                      #"
+Write-Host "#                  Developed by: Vincent Loveland                      #"
+Write-host "#                                                                      #"
+Write-Host "########################################################################"
+Write-Host ""
+
+$e = @() #exception for user SID
+
+# Finding user SID from NTAccount
+# Name must be inputted as it appears in the user's profile
+# Try/Catch for error handling on invalid user profile name
+try
+{
+    $name = Read-Host "Please enter the user profile name: "
+    $userSID = (New-Object System.Security.Principal.NTAccount($name)).Translate([System.Security.Principal.SecurityIdentifier]).value
+
+    Write-Host ""
+    Write-Host "$name SID: $userSID"
+}
+catch{$e += $_}
+
+# If exception catches an invalid profile name was used, the error will be printed and the program with stop
+if ($e.Exception.Message -match "The trust relationship between the primary domain and the trusted domain failed")
+{
+    Write-Host ""
+    Write-Host "( $name ) is an invalid user profile name."
+    Write-Host "Please re-run the program and try again."
+    Write-Host ""
+    Continue  
+}
+
+
+# Need to load the HKU drive. HKU drive is not loaded initially
+Write-Host ""
+Write-Host "------------------------------------------------------------------------"
+Write-Host "----------------------Checking / Loading HKU Drive----------------------"
+Write-Host "------------------------------------------------------------------------"
+Write-Host ""
+
+# Checking to see if HKU drive is already loaded
+if (Get-PSDrive -PSProvider Registry -Name HKU -ErrorAction SilentlyContinue)
+{
+    Write-Host "*HKEY_USERS Drive is already loaded*"
+}
+
+# If HKU drive is not loaded, it will be loaded here (Remove Out-Null if you would like to display the drive output in powershell)
+else
+{
+   New-PSDrive -PSProvider Registry -Name HKU -Root HKEY_USERS | Out-Null
+
+   Write-Host "*HKEY_USERS Drive has successfully been loaded*"
+}
+
+# Function purpose: Testing for the value in the registry at specified path
+# If key exists, returns true
+# If not exists, returns false
+function Test-Value($PATH,$VALUE)
+{ 
+    $excep = @() # Exception valid path and value 
+
+    try
+    {
+        Get-ItemPropertyValue -Path $PATH -Name $VALUE | Out-Null
+    }
+
+    catch{$excep += $_}
+
+    if ($excep.Exception.Message -match “Property $VALUE does not exist”)
+    {
+        Return $false
+    }
+
+    else
+    {
+        Return $true
+    }
+}
+
+Write-Host ""
+Write-Host "------------------------------------------------------------------------"
+Write-Host "------------------Checking / Creating Registry Values-------------------"
+Write-Host "------------------------------------------------------------------------"
+Write-Host ""
+
+# PATHS AND VALUES MUST LINE UP WITH EACH OTHER IN THE ARRAY ELEMENTS
+
+# Value and path arrarys for keys that require value of 0
+$valueArray0 = @("ZeroConfigExchange", "ZeroConfigExchange", "ExcludeHttpRedirect", "ExcludeHttpsAutoDiscoverDomain")
+$pathArray0 = @("HKU:$userSID\Software\Policies\Microsoft\Office\16.0\Outlook\AutoDiscover\", "HKU:$userSID\Software\Microsoft\Office\16.0\Outlook\AutoDiscover\", "HKU:$userSID\Software\Microsoft\Office\16.0\Outlook\AutoDiscover\", "HKU:$userSID\Software\Microsoft\Office\16.0\Outlook\AutoDiscover\")
+
+# Value and path arrarys for keys that require value of 1
+$valueArray1 = @("AlwaysUseLegacyAuthForAutoDiscover", "SupressNameChecks", "ExcludeSrvRecord", "ExcludeSrvLookup", "ExcludeScpLookup", "PreferLocalXML", "EnableSmartCard", "ExcludeHttpsRootDomain")
+$pathArray1 = @("HKU:$userSID\Software\Microsoft\Exchange\", "HKU:$userSID\Software\Microsoft\Office\16.0\Outlook\Security\", "HKU:$userSID\Software\Microsoft\Office\16.0\Outlook\AutoDiscover\","HKU:$userSID\Software\Microsoft\Office\16.0\Outlook\AutoDiscover\", "HKU:$userSID\Software\Microsoft\Office\16.0\Outlook\AutoDiscover\", "HKU:$userSID\Software\Microsoft\Office\16.0\Outlook\AutoDiscover\", "HKU:$userSID\Software\Microsoft\Office\16.0\Outlook\RPC\", "HKU:$userSID\Software\Microsoft\Office\16.0\Outlook\AutoDiscover\")
+
+# Initializing $i to 0 for the while loop
+$i = 0
+
+# Loop Function: Check with Test-Value function for the existence of value
+# If the value doesn't exist, it will create the value with DWORD value of 0
+While($i -lt $valueArray0.Length)
+{
+    # Calling on the test-value function to see if value currently exists
+    $call1 = Test-Value "$($pathArray0[$i])" "$($valueArray0[$i])" 
+
+    if($call1 -eq $true)
+    {
+        # Creating PSObject for a cleaner output
+        $tableOutput = @()
+        $tableOutput += @{RegistryValue = "$($valueArray0[$i])"; ValueFoundAt = "$($pathArray0[$i])"}
+        $tableOutput | % { New-Object PSObject -Property $_ }
+    }
+
+    else
+    {
+        Write-Host $($valueArray0[$i])"does not exists"
+        Write-Host "Creating value......"
+        Write-Host "====================================================================================================="
+        Write-Host ""
+
+        New-ItemProperty -Path "$($pathArray0[$i])" -Name "$($valueArray0[$i])" -Value 0 -PropertyType DWord | Out-Null
+    
+        Write-Host $($valueArray0[$i])"has been added to"$($pathArray0[$i])"with DWORD value of 0"
+        Write-Host ""
+        Write-Host "====================================================================================================="
+        Write-Host ""
+    }
+
+    # Increasing $i for the next iteration of the loop
+    $i++
+}
+
+# Initializing $j to 0
+$j = 0
+
+# Loop Function: Check with Test-Value function for the existence of value
+# If the value doesn't exist, it will create the value with DWORD value of 1
+While($j -lt $valueArray1.Length)
+{
+    # Calling on the test-value function to see if value currently exists
+    $call2 = Test-Value "$($pathArray1[$j])" "$($valueArray1[$j])" 
+
+    if($call2 -eq $true)
+    {
+        # Creating PSObject for a cleaner output
+        $tableOutput = @()
+        $tableOutput += @{RegistryValue = "$($valueArray1[$j])"; ValueFoundAt = "$($pathArray1[$j])"}
+        $tableOutput | % { New-Object PSObject -Property $_ }
+    }
+
+    else
+    {
+        Write-Host ""
+        Write-Host $($valueArray1[$j])"does not exists"
+        Write-Host "Creating value......"
+        Write-Host "====================================================================================================="
+        Write-Host ""
+
+        # Creating the new DWORD value within the registry 
+        New-ItemProperty -Path "$($pathArray1[$j])" -Name "$($valueArray1[$j])" -Value 1 -PropertyType DWord | Out-Null
+    
+        Write-Host $($valueArray1[$j])"has been added to"$($pathArray1[$j])"with DWORD value of 1"
+        Write-Host ""
+        Write-Host "====================================================================================================="
+        Write-Host ""
+        Write-Host ""
+    }
+
+    # Increasing $j for the next iteration of the loop
+    $j++
+}
+
+# END OF PROGRAM
+
+
+
+
+
+
+
+ 
